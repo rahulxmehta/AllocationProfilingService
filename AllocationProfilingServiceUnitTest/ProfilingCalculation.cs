@@ -84,6 +84,50 @@ namespace AllocationProfilingServiceUnitTest
 
             Assert.AreEqual(response.ProfilePeriods.Count, 2);
         }
+        [TestMethod]
+        public void CheckPESportPremiumNewProfile()
+        {
+            AllocationProfiler._client = GetCustomClient();
+            Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(PESportPremiumNewRequest, writer));
+            Assert.AreEqual(expected: 14000000.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P1").ProfileValue);
+            Assert.AreEqual(expected: 0.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P2").ProfileValue);
+            Assert.AreEqual(expected: 10000000.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P3").ProfileValue);
+
+            Assert.AreEqual(response.ProfilePeriods.Count, 3);
+        }
+
+        [TestMethod]
+        public void CheckPESportPremiumNewProfilePastFirstPeriod()
+        {
+            AllocationProfiler._client = GetCustomClient();
+            Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(PESportPremiumRequestNewProfilePastFirstPeriodRequest, writer));
+            Assert.AreEqual(expected: 0.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P1").ProfileValue);
+            Assert.AreEqual(expected: 14000000.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P2").ProfileValue);
+            Assert.AreEqual(expected: 10000000.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P3").ProfileValue);
+            Assert.AreEqual(response.ProfilePeriods.Count, 3);
+        }
+
+        [TestMethod]
+        public void CheckPESportPremiumNewReProfile()
+        {
+            AllocationProfiler._client = GetCustomClient();
+            Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(PESportPremiumNewReProfileRequest, writer));
+            Assert.AreEqual(expected: 70.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P1").ProfileValue);
+            Assert.AreEqual(expected: 0.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P2").ProfileValue);
+            Assert.AreEqual(expected: 80.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P3").ProfileValue);
+            Assert.AreEqual(response.ProfilePeriods.Count, 3);
+        }
+
+        [TestMethod]
+        public void CheckPESportPremiumNewReProfileWithPastPeriod()
+        {
+            AllocationProfiler._client = GetCustomClient();
+            Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(PESportPremiumNewReProfileWithPastPeriodRequest, writer));
+            Assert.AreEqual(expected: 70.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P1").ProfileValue);
+            Assert.AreEqual(expected: 70.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P2").ProfileValue);
+            Assert.AreEqual(expected: 100.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P3").ProfileValue);
+            Assert.AreEqual(response.ProfilePeriods.Count, 3);
+        }
 
 
         [TestMethod]
@@ -286,6 +330,51 @@ namespace AllocationProfilingServiceUnitTest
             }
         }
 
+        private static Request PESportPremiumNewRequest
+        {
+            get
+            {
+
+                Request req = new Request
+                {
+                    AllocationOrganisation = OrganisationTestData,
+                    FundingStream = "PESPORTPREMNEW",
+                    FundingPeriod = "2018-19",
+                    AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
+                                                    {
+                                                        new RequestPeriodValue {AllocationValue="24000000",Period="2018-2019" }
+                                                    },
+                    AllocationStartDate = "01/08/2018",
+                    AllocationEndDate = "31/07/2019",
+                    CalculationDate = "20/07/2018"
+                };
+                return req;
+            }
+        }
+
+        private static Request PESportPremiumRequestNewProfilePastFirstPeriodRequest
+        {
+            get
+            {
+
+                Request req = new Request
+                {
+                    AllocationOrganisation = OrganisationTestData,
+                    FundingStream = "PESPORTPREMNEW",
+                    FundingPeriod = "2018-19",
+                    AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
+                                                    {
+                                                        new RequestPeriodValue {AllocationValue="24000000",Period="2018-2019" }
+                                                    },
+                    AllocationStartDate = "01/08/2018",
+                    AllocationEndDate = "31/07/2019",
+                    CalculationDate = "02/11/2018"
+                };
+                return req;
+            }
+        }
+        
+
         private static Request PESportPremiumRequestReProfile
         {
             get
@@ -329,6 +418,114 @@ namespace AllocationProfilingServiceUnitTest
                 return req;
             }
         }
+
+        private static Request PESportPremiumNewReProfileRequest
+        {
+            get
+            {
+
+                Request req = new Request
+                {
+                    AllocationOrganisation = OrganisationTestData,
+                    FundingStream = "PESPORTPREMNEW",
+                    FundingPeriod = "2018-19",
+                    AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
+                                                    {
+                                                        new RequestPeriodValue {AllocationValue="150",Period="2018-2019" }
+                                                    },
+                    AllocationStartDate = "01/08/2018",
+                    AllocationEndDate = "31/07/2019",
+                    CalculationDate = "02/02/2019",
+                    LastApprovedProfilePeriods = new List<AllocationProfilePeriod>()
+                     {
+                         new AllocationProfilePeriod()
+                         {
+                              Period="P1",
+                              Occurence=1,
+                              PeriodYear=2018,
+                              DistributionPeriod="2018-19",
+                              PeriodType="HalfYearly",
+                              ProfileValue=70.00M
+                         },
+                          new AllocationProfilePeriod()
+                         {
+                              Period="P2",
+                              Occurence=1,
+                              PeriodYear=2019,
+                              DistributionPeriod="2018-19",
+                              PeriodType="HalfYearly",
+                              ProfileValue=0.00M
+                         },
+                         new AllocationProfilePeriod()
+                         {
+                             Period="P3",
+                              Occurence=1,
+                              PeriodYear=2019,
+                              DistributionPeriod="2018-19",
+                              PeriodType="HalfYearly",
+                              ProfileValue=50.00M
+                         }
+                     }
+
+                };
+                return req;
+            }
+        }
+
+        private static Request PESportPremiumNewReProfileWithPastPeriodRequest
+        {
+            get
+            {
+
+                Request req = new Request
+                {
+                    AllocationOrganisation = OrganisationTestData,
+                    FundingStream = "PESPORTPREMNEW",
+                    FundingPeriod = "2018-19",
+                    AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
+                                                    {
+                                                        new RequestPeriodValue {AllocationValue="240",Period="2018-2019" }
+                                                    },
+                    AllocationStartDate = "01/08/2018",
+                    AllocationEndDate = "31/07/2019",
+                    CalculationDate = "02/11/2018",
+                    LastApprovedProfilePeriods = new List<AllocationProfilePeriod>()
+                     {
+                         new AllocationProfilePeriod()
+                         {
+                              Period="P1",
+                              Occurence=1,
+                              PeriodYear=2018,
+                              DistributionPeriod="2018-19",
+                              PeriodType="HalfYearly",
+                              ProfileValue=70.00M
+                         },
+                          new AllocationProfilePeriod()
+                         {
+                              Period="P2",
+                              Occurence=1,
+                              PeriodYear=2019,
+                              DistributionPeriod="2018-19",
+                              PeriodType="HalfYearly",
+                              ProfileValue=0.00M
+                         },
+                         new AllocationProfilePeriod()
+                         {
+                             Period="P3",
+                              Occurence=1,
+                              PeriodYear=2019,
+                              DistributionPeriod="2018-19",
+                              PeriodType="HalfYearly",
+                              ProfileValue=50.00M
+                         }
+                     }
+
+                };
+                return req;
+            }
+        }
+
+        
 
         private static Request PupilPremiumRequest
         {
