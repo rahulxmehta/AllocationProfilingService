@@ -149,7 +149,10 @@ namespace AllocatinProfilingService
             //Assumption here that this is not a multiple distribution period, perhaps throw an error - Not Supported?
             decimal originalAllocationValue = Convert.ToDecimal(req.AllocationValuesByDistributionPeriod.First().AllocationValue);
             string allocationDistributionPeriod = req.AllocationValuesByDistributionPeriod.FirstOrDefault().Period;
-            var revisedAllocationValuesByDistributionPeriod = GetRevisedAllocationValueRequest(calculationDate, originalAllocationValue, allocationDistributionPeriod, req.LastApprovedProfilePeriods, patterns);
+
+            List<AllocationProfilePeriod> pastPeriodAllocationProfile = GetPastPeriodsFromAllocationProfile(calculationDate, req.LastApprovedProfilePeriods, patterns);
+
+            var revisedAllocationValuesByDistributionPeriod = GetRevisedAllocationValueRequest(calculationDate, originalAllocationValue, allocationDistributionPeriod, pastPeriodAllocationProfile, patterns);
             List <RequestPeriodValue> revisedAllocValsByDistPeriod= new List<RequestPeriodValue>() { revisedAllocationValuesByDistributionPeriod };
 
             var myObj = new
@@ -158,7 +161,7 @@ namespace AllocatinProfilingService
                 FundingStream = req.FundingStream,
                 FundingPeriod = req.FundingPeriod,
                 AllocationValuesByDistributionPeriod = req.AllocationValuesByDistributionPeriod,
-                ProfilePeriods= GetReProfiledPeriods(calculationDate, revisedAllocValsByDistPeriod, req.LastApprovedProfilePeriods, patterns, log)
+                ProfilePeriods= GetReProfiledPeriods(calculationDate, revisedAllocValsByDistPeriod, pastPeriodAllocationProfile, patterns, log)
             };
 
             return JsonConvert.SerializeObject(myObj);
@@ -166,8 +169,10 @@ namespace AllocatinProfilingService
 
         public static List<AllocationProfilePeriod> GetBalancingPaymentProfilePeriods(string reqCalculationDate, List<AllocationProfilePeriod> currentProfilePeriods, List<AllocationProfilePeriod> previousProfilePeriods, List<ProfilePeriodPattern> patterns, TraceWriter log)
         {
-            
-            DateTime calculationDate = DateTime.ParseExact(reqCalculationDate, "dd/MM/yyyy", CultureInfo.InvariantCulture);
+            DateTime calculationDate = DateTime.Now;
+            if (!string.IsNullOrEmpty(reqCalculationDate))
+                calculationDate = DateTime.ParseExact(reqCalculationDate, "dd/MM/yyyy", CultureInfo.InvariantCulture);
+
             List<AllocationProfilePeriod> pastProfilePeriodsCurrentAllocationProfile = GetPastPeriodsFromAllocationProfile(calculationDate, currentProfilePeriods, patterns);
             List<AllocationProfilePeriod> resultProfilePeriod = pastProfilePeriodsCurrentAllocationProfile;
 
@@ -188,7 +193,7 @@ namespace AllocatinProfilingService
                 pastProfilePeriodsCurrentAllocationProfile.ForEach(p => p.ProfileValue = 0);
             }
             
-            futureProfilePeriods.First().ProfileValue += balancingPayment; //check if balancing payment <0, in which case add to a period with non-zero profile value
+            futureProfilePeriods.First().ProfileValue += balancingPayment; //ToDO:check if balancing payment <0, in which case add to a period with non-zero profile value
             resultProfilePeriod.AddRange(futureProfilePeriods);
 
             return resultProfilePeriod;
@@ -205,10 +210,9 @@ namespace AllocatinProfilingService
         }
 
 
-        private static List<AllocationProfilePeriod> GetReProfiledPeriods(DateTime calculationDate, List<RequestPeriodValue> revisedAllocationPeriodValue,List<AllocationProfilePeriod> pastAllocationProfilePeriods, List<ProfilePeriodPattern> patterns, TraceWriter log)
+        private static List<AllocationProfilePeriod> GetReProfiledPeriods(DateTime calculationDate, List<RequestPeriodValue> revisedAllocationPeriodValue,List<AllocationProfilePeriod> pastProfilePeriods, List<ProfilePeriodPattern> patterns, TraceWriter log)
         {
 
-            List<AllocationProfilePeriod> pastProfilePeriods = GetPastPeriodsFromAllocationProfile(calculationDate, pastAllocationProfilePeriods, patterns);
             List<AllocationProfilePeriod> periodsToProfile = GetAllocationPeriodsToBeProfiled(calculationDate, patterns, log);
             var reProfiledPeriods = ApplyProfilePattern(revisedAllocationPeriodValue, patterns, periodsToProfile, log);
             pastProfilePeriods.AddRange(reProfiledPeriods);
@@ -283,10 +287,10 @@ namespace AllocatinProfilingService
             return profilePattern.Where(p => p.PeriodEndDate >= allocationStartDate && p.PeriodStartDate <= allocationEndDate).ToList();
         }
 
-        private static decimal GetRevisedAllocationValueToProfile(DateTime currentDateTime,List<AllocationProfilePeriod> previousAllocationProfilePeriods, 
+        private static decimal GetRevisedAllocationValueToProfile(DateTime currentDateTime,List<AllocationProfilePeriod> previousPastAllocationProfilePeriods, 
                                                                     List<ProfilePeriodPattern> profilePatterns, decimal revisedAllocationValue)
         {
-            decimal pastPeriodTotal = GetPastPeriodsFromAllocationProfile(currentDateTime, previousAllocationProfilePeriods, profilePatterns).Sum(p => p.ProfileValue);
+            decimal pastPeriodTotal = previousPastAllocationProfilePeriods.Sum(p => p.ProfileValue);
             return revisedAllocationValue - pastPeriodTotal;
         }
 

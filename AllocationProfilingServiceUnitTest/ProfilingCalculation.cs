@@ -303,7 +303,8 @@ namespace AllocationProfilingServiceUnitTest
                                                         new RequestPeriodValue {AllocationValue="2400",Period="2018-2019" }
                                                     },
                     AllocationStartDate = "01/04/2018",
-                    AllocationEndDate = "31/03/2019"
+                    AllocationEndDate = "31/03/2019",
+                    CalculationDate = "01/03/2018"
                 };
                 return req;
             }
