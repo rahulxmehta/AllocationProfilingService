@@ -13,8 +13,10 @@ using Newtonsoft.Json;
 using Microsoft.Azure.Documents.Client;
 using Microsoft.Azure.Documents;
 using System.Configuration;
+using System.Runtime.Remoting.Messaging;
 using Microsoft.Azure.Documents.Linq;
 using Autofac.Features;
+using static System.String;
 
 namespace AllocatinProfilingService
 {
@@ -22,6 +24,7 @@ namespace AllocatinProfilingService
     {
 
         public static DocumentClient _client { get; set; }
+        public static TraceWriter Log { get; set; }
 
         [FunctionName("AllocationProfiler")]
         public static async Task<HttpResponseMessage> Run(
@@ -35,19 +38,19 @@ namespace AllocatinProfilingService
                 log.Info("C# HTTP trigger function processed a request.");
 
                 bool allInputAvailable = false;
-                string jsonToReturn = string.Empty;
+                string jsonToReturn = Empty;
 
                 _client = client;
 
                 Request request = CreateRequestFromQueryString(req);
 
-                if (request.FundingStream == null)
+                if (request.FundingStreamPeriod == null)
                 {
                     // Get request body
                     dynamic data = await req.Content.ReadAsStringAsync();
                     request = JsonConvert.DeserializeObject<Request>(data as string);
 
-                    log.Info("Body " + request.FundingStream + " " + request.AllocationValuesByDistributionPeriod[0].Period);
+                    log.Info("Body " + request.FundingStreamPeriod + " " + request.AllocationValuesByDistributionPeriod[0].Period);
 
                 }
 
@@ -55,8 +58,7 @@ namespace AllocatinProfilingService
                     request.AllocationValuesByDistributionPeriod.Count != 0 &&
                     request.AllocationStartDate != null &
                     request.AllocationEndDate != null &&
-                    request.FundingStream != null &&
-                    request.FundingPeriod != null
+                    request.FundingStreamPeriod != null 
                     )
                 {
                     allInputAvailable = true;
@@ -81,30 +83,34 @@ namespace AllocatinProfilingService
         public static string GetGenericResponse(Request request,TraceWriter log)
         {
             FundingStreamPeriodProfilePattern fspPattern = LoadFSPConfiguration(request.AllocationOrganisation.AlternateOrganisation.Identifier, 
-                                                                                request.FundingStream, 
-                                                                                request.FundingPeriod, 
-                                                                                log);
+                                                                                request.FundingStreamPeriod
+                                                                                );
 
             //Three types of profiling:
             //Profile/Re-profile with balancing payment calc , don't change past periods (ReProfilePastPeriods =false, e.g. PE Sport and Premium, DSG)
             //Profile/Re-profile with no balancing payment calc, don't change past periods (ReProfilePastPeriods =false, e.g. 16-19 funding)
             //Profile/Re-Profile wiith no balancing payment calc, change past periods (e.g. SFA type of funding)
-            if (request.LastApprovedProfilePeriods != null && !fspPattern.ReProfilePastPeriods && !fspPattern.CalculateBalancingPayment )
+            if (IsReProfilingWithoutBalancingPayment(request.LastApprovedProfilePeriods!=null,fspPattern.ReProfilePastPeriods,fspPattern.CalculateBalancingPayment))
             {
-                return GetReProfileResponse(request, fspPattern.ProfilePattern, log);
+                return GetReProfileResponse(request, fspPattern.ProfilePattern);
             }
            
 
-            return GetReponseForAnyDistributionPattern(request, fspPattern.ProfilePattern,fspPattern.CalculateBalancingPayment, log);
+            return GetReponseForAnyDistributionPattern(request, fspPattern);
 
+        }
+
+        private static bool IsReProfilingWithoutBalancingPayment(bool isPreviousProfileProvided,bool reprofilePastPeriods, bool configBalancingPaymentRequired)
+        {
+            return (isPreviousProfileProvided && !reprofilePastPeriods &&
+                    !configBalancingPaymentRequired);
         }
 
         private static Request CreateRequestFromQueryString(HttpRequestMessage req)
         {
             Request request = new Request
             {
-                FundingStream = GetQueryParameterValue(req, "FundingStream"),
-                FundingPeriod = GetQueryParameterValue(req, "FundingPeriod"),
+                FundingStreamPeriod = GetQueryParameterValue(req, "FundingStreamPeriod"),
                 AllocationStartDate = GetQueryParameterValue(req, "AllocationStartDate"),
                 AllocationEndDate = GetQueryParameterValue(req, "AllocationEndDate")
             };
@@ -116,25 +122,28 @@ namespace AllocatinProfilingService
         private static string GetQueryParameterValue(HttpRequestMessage req, string parameterName)
         {
             return req.GetQueryNameValuePairs()
-                .FirstOrDefault(q => string.Compare(q.Key, parameterName, true) == 0)
+                .FirstOrDefault(q => Compare(q.Key, parameterName, true) == 0)
                 .Value;
         }
 
 
-        private static string GetReponseForAnyDistributionPattern(Request req, List<ProfilePeriodPattern> patterns , bool balancingPaymentCalculate, TraceWriter log)
+        private static string GetReponseForAnyDistributionPattern(Request req, FundingStreamPeriodProfilePattern fspPattern)
         {
-            List<AllocationProfilePeriod> profilePeriods = GetProfiledPeriods(req.AllocationStartDate, req.AllocationEndDate, req.AllocationValuesByDistributionPeriod, patterns, log);
+            DateBoundaries dateBoundaries = GetDateBoundariesOfAllocation(req.AllocationStartDate, req.AllocationEndDate, fspPattern.FundingStreamPeriodStartDate, fspPattern.FundingStreamPeriodEndDate);
+            
+            List<AllocationProfilePeriod> profilePeriods = GetProfiledAllocationPeriodsWithPatternApplied(dateBoundaries.dtStart, dateBoundaries.dtEnd, req.AllocationValuesByDistributionPeriod, fspPattern.ProfilePattern);
+
             List<AllocationProfilePeriod> resultProfilePeriods = profilePeriods;
-            if (balancingPaymentCalculate)
+
+            if (fspPattern.CalculateBalancingPayment)
             {
-                resultProfilePeriods = GetBalancingPaymentProfilePeriods(req.CalculationDate, profilePeriods, req.LastApprovedProfilePeriods, patterns, log);
+                resultProfilePeriods = GetAllocationProfilePeriodsWithBalancingPaymentApplied(req.CalculationDate, profilePeriods, req.LastApprovedProfilePeriods, fspPattern.ProfilePattern);
             }
 
             var myObj = new
             {
                 AllocationOrganisation = req.AllocationOrganisation,
-                FundingStream = req.FundingStream,
-                FundingPeriod = req.FundingPeriod,
+                FundingStreamPeriod = req.FundingStreamPeriod,
                 AllocationValuesByDistributionPeriod = req.AllocationValuesByDistributionPeriod,
                 ProfilePeriods = resultProfilePeriods
             };
@@ -142,44 +151,61 @@ namespace AllocatinProfilingService
             return JsonConvert.SerializeObject(myObj);
         }
 
-        public static string GetReProfileResponse(Request req, List<ProfilePeriodPattern> patterns ,TraceWriter log)
+        private static DateBoundaries GetDateBoundariesOfAllocation(string allocationStartDate, string allocationEndDate, DateTime fspStartDate, DateTime fspEndDate)
         {
-            DateTime calculationDate = DateTime.ParseExact(req.CalculationDate, "dd/MM/yyyy", CultureInfo.InvariantCulture);
+            DateTime dtStart = fspStartDate;
+            DateTime dtEnd = fspEndDate;
 
-            //Assumption here that this is not a multiple distribution period, perhaps throw an error - Not Supported?
-            decimal originalAllocationValue = Convert.ToDecimal(req.AllocationValuesByDistributionPeriod.First().AllocationValue);
-            string allocationDistributionPeriod = req.AllocationValuesByDistributionPeriod.FirstOrDefault().Period;
+            if (IsNullOrEmpty(allocationStartDate) || IsNullOrEmpty(allocationEndDate))
+                return new DateBoundaries(dtStart, dtEnd);
 
-            List<AllocationProfilePeriod> pastPeriodAllocationProfile = GetPastPeriodsFromAllocationProfile(calculationDate, req.LastApprovedProfilePeriods, patterns);
+            dtStart = DateTime.ParseExact(allocationStartDate, "dd/MM/yyyy", CultureInfo.InvariantCulture);
+            dtEnd = DateTime.ParseExact(allocationEndDate, "dd/MM/yyyy", CultureInfo.InvariantCulture);
 
-            var revisedAllocationValuesByDistributionPeriod = GetRevisedAllocationValueRequest(calculationDate, originalAllocationValue, allocationDistributionPeriod, pastPeriodAllocationProfile, patterns);
-            List <RequestPeriodValue> revisedAllocValsByDistPeriod= new List<RequestPeriodValue>() { revisedAllocationValuesByDistributionPeriod };
+            return new DateBoundaries(dtStart, dtEnd);
 
+        }
+        public static string GetReProfileResponse(Request req, List<ProfilePeriodPattern> patterns)
+        {
+            DateTime calculationDate = GetCalculationDate(req.CalculationDate);
+
+            List<AllocationProfilePeriod> pastPeriodsAllocationProfile = GetPastPeriodsFromAllocationProfile(calculationDate, req.LastApprovedProfilePeriods, patterns);
+
+            List<RequestPeriodValue> revisedRequestAllocationValue = new List<RequestPeriodValue>()
+                                                                             {
+                                                                                GetRevisedAllocationValueRequest( 
+                                                                                    Convert.ToDecimal(req.AllocationValuesByDistributionPeriod.First().AllocationValue),
+                                                                                    req.AllocationValuesByDistributionPeriod.FirstOrDefault().Period,
+                                                                                    pastPeriodsAllocationProfile
+                                                                                    )
+                                                                            };
+                                                                                                
             var myObj = new
             {
                 AllocationOrganisation = req.AllocationOrganisation,
-                FundingStream = req.FundingStream,
-                FundingPeriod = req.FundingPeriod,
+                FundingStream = req.FundingStreamPeriod,
                 AllocationValuesByDistributionPeriod = req.AllocationValuesByDistributionPeriod,
-                ProfilePeriods= GetReProfiledPeriods(calculationDate, revisedAllocValsByDistPeriod, pastPeriodAllocationProfile, patterns, log)
+                ProfilePeriods= GetReProfiledPeriods(calculationDate, revisedRequestAllocationValue, pastPeriodsAllocationProfile, patterns)
             };
 
             return JsonConvert.SerializeObject(myObj);
         }
 
-        public static List<AllocationProfilePeriod> GetBalancingPaymentProfilePeriods(string reqCalculationDate, List<AllocationProfilePeriod> currentProfilePeriods, List<AllocationProfilePeriod> previousProfilePeriods, List<ProfilePeriodPattern> patterns, TraceWriter log)
+        public static List<AllocationProfilePeriod> GetAllocationProfilePeriodsWithBalancingPaymentApplied(string reqCalculationDate, List<AllocationProfilePeriod> currentProfilePeriods, List<AllocationProfilePeriod> previousProfilePeriods, List<ProfilePeriodPattern> patterns)
         {
-            DateTime calculationDate = DateTime.Now;
-            if (!string.IsNullOrEmpty(reqCalculationDate))
-                calculationDate = DateTime.ParseExact(reqCalculationDate, "dd/MM/yyyy", CultureInfo.InvariantCulture);
+            //Scenarios covered by unit testing :
+            //1 -  Profile for first time, calculation date is before cut-off date of any period - CheckPESportPremiumNewProfileStartOfYear
+            //2 -  Re-Profile, calculation date is before cut-off date of any period - CheckPESportPremiumNewReProfileBeforeFirstPayment
+            //3 -  Profile for first time, calculation date is past the first period - CheckPESportPremiumNewProfilePastFirstPeriodToCaterForNewSchools
+            //4 -  Re-Profile, calculation date is past the first period - CheckPESportPremiumNewReProfilePastFirstPeriod
+            //5 -  Re-Profile, calculation date is past two periods - CheckPESportPremiumNewReProfilePastTwoPeriodToCaterForUpdates
+            DateTime calculationDate = GetCalculationDate(reqCalculationDate);
 
             List<AllocationProfilePeriod> pastProfilePeriodsCurrentAllocationProfile = GetPastPeriodsFromAllocationProfile(calculationDate, currentProfilePeriods, patterns);
             List<AllocationProfilePeriod> resultProfilePeriod = pastProfilePeriodsCurrentAllocationProfile;
 
-            decimal shouldBeenPaidPreviously = pastProfilePeriodsCurrentAllocationProfile.Sum(p => p.ProfileValue);
-            decimal balancingPayment = shouldBeenPaidPreviously;
-
-            List<AllocationProfilePeriod> futureProfilePeriods = GetFuturePeriodsFromAllocationProfile(calculationDate, currentProfilePeriods, patterns);
+            decimal amountShouldBeenPaidPreviously = pastProfilePeriodsCurrentAllocationProfile.Sum(p => p.ProfileValue);
+            decimal balancingPayment = amountShouldBeenPaidPreviously;
 
             if (previousProfilePeriods != null)
             {
@@ -192,53 +218,60 @@ namespace AllocatinProfilingService
             {
                 pastProfilePeriodsCurrentAllocationProfile.ForEach(p => p.ProfileValue = 0);
             }
-            
+
+            List<AllocationProfilePeriod> futureProfilePeriods = GetFuturePeriodsFromAllocationProfile(calculationDate, currentProfilePeriods, patterns);
             futureProfilePeriods.First().ProfileValue += balancingPayment; //ToDO:check if balancing payment <0, in which case add to a period with non-zero profile value
             resultProfilePeriod.AddRange(futureProfilePeriods);
 
             return resultProfilePeriod;
         }
 
-
-        private static List<AllocationProfilePeriod> GetProfiledPeriods(string reqAllocationStartDate, string reqAllocationEndDate, List<RequestPeriodValue> allocationValuesByPeriod, List<ProfilePeriodPattern> patterns, TraceWriter log)
+        
+        private static DateTime GetCalculationDate(string reqCalculationDate)
         {
-            DateTime allocationStartDate = DateTime.ParseExact(reqAllocationStartDate, "dd/MM/yyyy", CultureInfo.InvariantCulture);
-            DateTime allocationEndDate = DateTime.ParseExact(reqAllocationEndDate, "dd/MM/yyyy", CultureInfo.InvariantCulture);
+            DateTime calculationDate = DateTime.Now;
 
-            List<AllocationProfilePeriod> allocationProfilePeriods = GetProfilePeriodsForAllocation(allocationStartDate, allocationEndDate, patterns, log);
-            return ApplyProfilePattern(allocationValuesByPeriod, patterns, allocationProfilePeriods, log);
+            if (IsNullOrEmpty(reqCalculationDate)) return calculationDate;
+
+            calculationDate = DateTime.ParseExact(reqCalculationDate, "dd/MM/yyyy", CultureInfo.InvariantCulture);
+
+            return calculationDate;
+        }
+
+        private static List<AllocationProfilePeriod> GetProfiledAllocationPeriodsWithPatternApplied(DateTime dtStart, DateTime dtEnd ,List<RequestPeriodValue> allocationValuesByPeriod, List<ProfilePeriodPattern> patterns)
+        {
+            List<AllocationProfilePeriod> allocationProfilePeriods = GetProfilePeriodsForAllocation(dtStart, dtEnd, patterns);
+            return ApplyProfilePattern(allocationValuesByPeriod, patterns, allocationProfilePeriods);
         }
 
 
-        private static List<AllocationProfilePeriod> GetReProfiledPeriods(DateTime calculationDate, List<RequestPeriodValue> revisedAllocationPeriodValue,List<AllocationProfilePeriod> pastProfilePeriods, List<ProfilePeriodPattern> patterns, TraceWriter log)
+        private static List<AllocationProfilePeriod> GetReProfiledPeriods(DateTime calculationDate, List<RequestPeriodValue> revisedAllocationPeriodValue,List<AllocationProfilePeriod> pastProfilePeriods, List<ProfilePeriodPattern> patterns)
         {
 
-            List<AllocationProfilePeriod> periodsToProfile = GetAllocationPeriodsToBeProfiled(calculationDate, patterns, log);
-            var reProfiledPeriods = ApplyProfilePattern(revisedAllocationPeriodValue, patterns, periodsToProfile, log);
+            List<AllocationProfilePeriod> periodsToProfile = GetAllocationPeriodsToBeProfiled(calculationDate, patterns);
+            var reProfiledPeriods = ApplyProfilePattern(revisedAllocationPeriodValue, patterns, periodsToProfile);
             pastProfilePeriods.AddRange(reProfiledPeriods);
             return pastProfilePeriods;
         }
         
-        private static RequestPeriodValue GetRevisedAllocationValueRequest(DateTime calculationDate, decimal originalAllocationValue, string allocationDistributionPeriod, List<AllocationProfilePeriod> pastProfilePeriods, List<ProfilePeriodPattern> profilePatterns)
+        private static RequestPeriodValue GetRevisedAllocationValueRequest(decimal originalAllocationValue, string allocationDistributionPeriod, List<AllocationProfilePeriod> pastProfilePeriods)
         {
             return new RequestPeriodValue()
             {
                 Period = allocationDistributionPeriod,
-                AllocationValue = GetRevisedAllocationValueToProfile(calculationDate, pastProfilePeriods, profilePatterns, originalAllocationValue).ToString()
+                AllocationValue = (originalAllocationValue - pastProfilePeriods.Sum(p => p.ProfileValue)).ToString()
             
             };
         }
 
-        private static List<AllocationProfilePeriod> GetProfilePeriodsForAllocation(DateTime allocationStartDate,
-                                                                          DateTime allocationEndDate,
-                                                                          List<ProfilePeriodPattern> profilePattern,
-                                                                          TraceWriter log
+        private static List<AllocationProfilePeriod> CreateAllocationProfilePeriodsUsingPatternPeriods(
+                                                                          List<ProfilePeriodPattern> profilePattern
                                                                          )
         {
-         
+
             List<AllocationProfilePeriod> profilePeriods = new List<AllocationProfilePeriod>();
-            
-            foreach (ProfilePeriodPattern period in GetPatternPeriodsWithinAllocation(allocationStartDate, allocationEndDate, profilePattern))
+
+            foreach (ProfilePeriodPattern period in profilePattern)
             {
 
                 profilePeriods.Add(new AllocationProfilePeriod
@@ -255,28 +288,23 @@ namespace AllocatinProfilingService
             return profilePeriods;
         }
 
+        private static List<AllocationProfilePeriod> GetProfilePeriodsForAllocation(DateTime startDate,
+                                                                          DateTime endDate,
+                                                                          List<ProfilePeriodPattern> profilePattern
+                                                                         )
+        {
+            return CreateAllocationProfilePeriodsUsingPatternPeriods(
+                                GetPatternPeriodsWithinAllocation(startDate, endDate, profilePattern)
+                                );
+        }
+
         private static List<AllocationProfilePeriod> GetAllocationPeriodsToBeProfiled(DateTime currentDateTime,
-                                                                         List<ProfilePeriodPattern> profilePatterns,
-                                                                         TraceWriter log
+                                                                         List<ProfilePeriodPattern> profilePatterns
                                                                         )
         {
-            List<AllocationProfilePeriod> profilePeriods = new List<AllocationProfilePeriod>();
-
-            foreach (ProfilePeriodPattern period in GetFutureProfilePatternsForAllocation(currentDateTime, profilePatterns))
-            {
-
-                profilePeriods.Add(new AllocationProfilePeriod
-                {
-                    Period = period.Period,
-                    Occurence = period.Occurrence,
-                    PeriodYear = period.PeriodEndDate.Year,
-                    DistributionPeriod = period.DistributionPeriod,
-                    PeriodType = period.PeriodType,
-                });
-            }
-
-
-            return profilePeriods;
+            return CreateAllocationProfilePeriodsUsingPatternPeriods(
+                               GetFutureProfilePatternsForAllocation(currentDateTime, profilePatterns)
+                               );
         }
 
         private static List<ProfilePeriodPattern> GetPatternPeriodsWithinAllocation(DateTime allocationStartDate,
@@ -287,8 +315,8 @@ namespace AllocatinProfilingService
             return profilePattern.Where(p => p.PeriodEndDate >= allocationStartDate && p.PeriodStartDate <= allocationEndDate).ToList();
         }
 
-        private static decimal GetRevisedAllocationValueToProfile(DateTime currentDateTime,List<AllocationProfilePeriod> previousPastAllocationProfilePeriods, 
-                                                                    List<ProfilePeriodPattern> profilePatterns, decimal revisedAllocationValue)
+        private static decimal GetRevisedAllocationValueToProfile(List<AllocationProfilePeriod> previousPastAllocationProfilePeriods, 
+                                                                   decimal revisedAllocationValue)
         {
             decimal pastPeriodTotal = previousPastAllocationProfilePeriods.Sum(p => p.ProfileValue);
             return revisedAllocationValue - pastPeriodTotal;
@@ -324,11 +352,11 @@ namespace AllocatinProfilingService
             {
                 foreach(ProfilePeriodPattern patternPeriod in profilePatterns)
                 {
-                    if (period.Period == patternPeriod.Period && period.PeriodType==patternPeriod.PeriodType && period.Occurence==patternPeriod.Occurrence && period.PeriodYear == patternPeriod.PeriodEndDate.Year)
-                    {
-                        matchedProfilePeriods.Add(period);
-                        break;
-                    }
+                    if (period.Period != patternPeriod.Period || period.PeriodType != patternPeriod.PeriodType ||
+                        period.Occurence != patternPeriod.Occurrence ||
+                        period.PeriodYear != patternPeriod.PeriodEndDate.Year) continue;
+                    matchedProfilePeriods.Add(period);
+                    break;
                 }
             }
             return matchedProfilePeriods;
@@ -336,8 +364,7 @@ namespace AllocatinProfilingService
 
         private static List<AllocationProfilePeriod> ApplyProfilePattern( List<RequestPeriodValue> allocationValuesByPeriod,
                                                                 List<ProfilePeriodPattern> profilePatterns,
-                                                                List<AllocationProfilePeriod> profilePeriods,
-                                                                TraceWriter log
+                                                                List<AllocationProfilePeriod> profilePeriods
                                                               )
         {
             List<PercentageByDistibutionPeriod> percentagebyPeriods = GetTotalPercentageByDistibutionPeriods(profilePatterns,profilePeriods);
@@ -406,7 +433,7 @@ namespace AllocatinProfilingService
             {
                 foreach (AllocationProfilePeriod period in periods)
                 {
-                    if (pattern.Period == period.Period && pattern.DistributionPeriod == period.DistributionPeriod && pattern.Occurrence== period.Occurence & pattern.PeriodEndDate.Year == period.PeriodYear) //TODO: Perhaps more checks needed- year? Occurence?
+                    if (pattern.Period == period.Period && pattern.DistributionPeriod == period.DistributionPeriod && pattern.Occurrence== period.Occurence & pattern.PeriodEndDate.Year == period.PeriodYear)
                     {
                         matchedPatterns.Add(pattern);
                         break;
@@ -416,30 +443,23 @@ namespace AllocatinProfilingService
             return matchedPatterns;
         }
 
-        private static string GetFundingStreamPeriod(string fundingStream, string fundingPeriod)
-        {
-            return fundingStream.ToUpper() + fundingPeriod.Replace("20", "").Replace("-", "");
-        }
-
-        private static FundingStreamPeriodProfilePattern LoadFSPConfiguration(string providerIdentifier, string fundingStream, string fundingPeriod,TraceWriter log)
+        private static FundingStreamPeriodProfilePattern LoadFSPConfiguration(string providerIdentifier, string fundingStreamPeriod)
         {
             // Get Provider Profile Pattern for an FSP, if not get for FS for the provider
             // if not available then get one for FSP
-            // if not available then get for FS ToDo
 
-            FundingStreamPeriodProfilePattern providerPattern = FromCofigGetProviderFspProfilePattern(providerIdentifier, fundingStream, fundingPeriod,log);
-            return providerPattern ?? FromCofigGetFspProfilePattern(providerIdentifier, fundingStream, fundingPeriod,log);
-
+            FundingStreamPeriodProfilePattern pattern = FromCofigGetProviderFspProfilePattern(providerIdentifier, fundingStreamPeriod);
+            return pattern ?? FromCofigGetFspProfilePattern(fundingStreamPeriod);
         }
 
-        private static FundingStreamPeriodProfilePattern FromCofigGetFspProfilePattern(string providerIdentifier, string fundingStream, string fundingPeriod, TraceWriter log)
+        private static FundingStreamPeriodProfilePattern FromCofigGetFspProfilePattern(string fundingStreamPeriod)
         {
-            log.Info("Getting profile periods for allocation at FSP Level ...");
+            Log.Info("Getting profile periods for allocation at FSP Level ...");
 
             Uri collectionUri = UriFactory.CreateDocumentCollectionUri("FundingPolicy", "FundingStreamPeriodProfilePattern");
 
             IDocumentQuery<FundingStreamPeriodProfilePattern> query = _client.CreateDocumentQuery<FundingStreamPeriodProfilePattern>(collectionUri)
-                .Where(p => p.FundingStreamPeriodCode == GetFundingStreamPeriod(fundingStream, fundingPeriod))
+                .Where(p => p.FundingStreamPeriodCode.ToUpper() == fundingStreamPeriod.ToUpper())
                 .AsDocumentQuery();
 
             while (query.HasMoreResults)
@@ -454,16 +474,17 @@ namespace AllocatinProfilingService
             //return FromConfigGetNonLevy1618AppsProfilePattern();
         }
 
-        private static FundingStreamPeriodProfilePattern FromCofigGetProviderFspProfilePattern(string providerIdentifier, string fundingStream, string fundingPeriod, TraceWriter log)
+        private static FundingStreamPeriodProfilePattern FromCofigGetProviderFspProfilePattern(string providerIdentifier, string fundingStreamPeriod)
         {
-            
-            log.Info($"Getting profile periods for allocation at Provider FSP Level ...{fundingStream}, {fundingPeriod}, {providerIdentifier}");
+
+            Log.Info($"Getting profile periods for allocation at Provider FSP Level ...{fundingStreamPeriod}, {providerIdentifier}");
+
+            if (IsNullOrEmpty(providerIdentifier)) return null;
 
             Uri collectionUri = UriFactory.CreateDocumentCollectionUri("FundingPolicy", "OrganisationFSPProfilePattern");
-
                
             IDocumentQuery<OrganisationFundingProfilePattern> query = _client.CreateDocumentQuery<OrganisationFundingProfilePattern>(collectionUri)
-                .Where(p => p.FundingStreamPeriodProfilePattern.FundingStreamPeriodCode == GetFundingStreamPeriod(fundingStream, fundingPeriod) && p.AllocationOrganisation.AlternateOrganisation.Identifier == providerIdentifier)
+                .Where(p => p.FundingStreamPeriodProfilePattern.FundingStreamPeriodCode.ToUpper() == fundingStreamPeriod.ToUpper() && p.AllocationOrganisation.AlternateOrganisation.Identifier == providerIdentifier)
                 .AsDocumentQuery();
 
             
@@ -512,8 +533,9 @@ namespace AllocatinProfilingService
     public class Request
     {
         public Organisation AllocationOrganisation { get; set; }
-        public string FundingStream { get; set; }
-        public string FundingPeriod { get; set; }
+        
+        public string FundingStreamPeriod { get; set; }
+
         public string AllocationStartDate { get; set; }
         public string AllocationEndDate { get; set; }
 
@@ -524,8 +546,7 @@ namespace AllocatinProfilingService
 
     public class Response
     {
-        public string FundingStream { get; set; }
-        public string FundingPeriod { get; set; }
+        public string FundingStreamPeriod { get; set; }
         public string AllocationStartDate { get; set; }
         public string AllocationEndDate { get; set; }
         public List<RequestPeriodValue> AllocationValuesByDistributionPeriod { get; set; }
@@ -596,11 +617,21 @@ namespace AllocatinProfilingService
         public List<ProfilePeriodPattern> ProfilePattern { get; set; }
     }
 
-
-
     public class PercentageByDistibutionPeriod
     {
         public string Period { get; set; }
         public decimal TotalProfilePercentage { get; set; }
+    }
+
+    public struct DateBoundaries
+    {
+        public DateTime dtStart { get; set; }
+        public DateTime dtEnd { get; set; }
+
+        public DateBoundaries(DateTime dtstart, DateTime dtend)
+        {
+            dtStart = dtstart;
+            dtEnd = dtend;
+        }
     }
 }

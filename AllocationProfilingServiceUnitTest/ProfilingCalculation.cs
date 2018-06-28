@@ -17,7 +17,8 @@ namespace AllocationProfilingServiceUnitTest
     public class ProfilingCalculation
     {
         private static DocumentClient client = GetCustomClient();
-        TraceWriter writer = new TraceMonitor();
+        
+        private TraceWriter writer = new TraceMonitor();
 
         private static DocumentClient GetCustomClient()
         {
@@ -39,11 +40,17 @@ namespace AllocationProfilingServiceUnitTest
            return customClient;
        }
 
-
-    [TestMethod]
-        public void CheckDSGProfile()
+        [TestInitialize]
+        public void SetUp()
         {
             AllocationProfiler._client = GetCustomClient();
+            AllocationProfiler.Log = writer;
+        }
+
+        [TestMethod]
+        public void CheckDSGProfile()
+        {
+            
             Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(DSGRequest, writer));
             
             Assert.AreEqual(expected: 96.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "Apr" && q.Occurence== 1 && q.PeriodYear == 2018).ProfileValue);
@@ -77,7 +84,6 @@ namespace AllocationProfilingServiceUnitTest
         [TestMethod]
         public void CheckPESportPremiumProfile()
         {
-            AllocationProfiler._client = GetCustomClient();
             Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(PESportPremiumRequest, writer));
             Assert.AreEqual(expected: 14000000.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "H1").ProfileValue);
             Assert.AreEqual(expected: 10000000.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "H2").ProfileValue);
@@ -85,9 +91,8 @@ namespace AllocationProfilingServiceUnitTest
             Assert.AreEqual(response.ProfilePeriods.Count, 2);
         }
         [TestMethod]
-        public void CheckPESportPremiumNewProfile()
+        public void CheckPESportPremiumNewProfileStartOfYear()
         {
-            AllocationProfiler._client = GetCustomClient();
             Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(PESportPremiumNewRequest, writer));
             Assert.AreEqual(expected: 14000000.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P1").ProfileValue);
             Assert.AreEqual(expected: 0.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P2").ProfileValue);
@@ -97,9 +102,8 @@ namespace AllocationProfilingServiceUnitTest
         }
 
         [TestMethod]
-        public void CheckPESportPremiumNewProfilePastFirstPeriod()
+        public void CheckPESportPremiumNewProfilePastFirstPeriodToCaterForNewSchools()
         {
-            AllocationProfiler._client = GetCustomClient();
             Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(PESportPremiumRequestNewProfilePastFirstPeriodRequest, writer));
             Assert.AreEqual(expected: 0.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P1").ProfileValue);
             Assert.AreEqual(expected: 14000000.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P2").ProfileValue);
@@ -108,10 +112,9 @@ namespace AllocationProfilingServiceUnitTest
         }
 
         [TestMethod]
-        public void CheckPESportPremiumNewReProfile()
+        public void CheckPESportPremiumNewReProfilePastTwoPeriodToCaterForUpdates()
         {
-            AllocationProfiler._client = GetCustomClient();
-            Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(PESportPremiumNewReProfileRequest, writer));
+            Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(PESportPremiumNewReProfilePastTwoPeriodsRequest, writer));
             Assert.AreEqual(expected: 70.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P1").ProfileValue);
             Assert.AreEqual(expected: 0.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P2").ProfileValue);
             Assert.AreEqual(expected: 80.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P3").ProfileValue);
@@ -119,21 +122,28 @@ namespace AllocationProfilingServiceUnitTest
         }
 
         [TestMethod]
-        public void CheckPESportPremiumNewReProfileWithPastPeriod()
+        public void CheckPESportPremiumNewReProfilePastFirstPeriod()
         {
-            AllocationProfiler._client = GetCustomClient();
-            Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(PESportPremiumNewReProfileWithPastPeriodRequest, writer));
+            Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(PESportPremiumRequestReProfilePastFirstPeriodRequest, writer));
             Assert.AreEqual(expected: 70.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P1").ProfileValue);
             Assert.AreEqual(expected: 70.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P2").ProfileValue);
             Assert.AreEqual(expected: 100.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P3").ProfileValue);
             Assert.AreEqual(response.ProfilePeriods.Count, 3);
         }
 
+        [TestMethod]
+        public void CheckPESportPremiumNewReProfileBeforeFirstPayment()
+        {
+            Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(PESportPremiumNewReProfileBeforeFirstPaymentRequest, writer));
+            Assert.AreEqual(expected: 140.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P1").ProfileValue);
+            Assert.AreEqual(expected: 0.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P2").ProfileValue);
+            Assert.AreEqual(expected: 100.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "P3").ProfileValue);
+            Assert.AreEqual(response.ProfilePeriods.Count, 3);
+        }
 
         [TestMethod]
         public void CheckPESportPremiumReProfile()
         {
-            AllocationProfiler._client = GetCustomClient();
             Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(PESportPremiumRequestReProfile, writer));
             Assert.AreEqual(expected: 70.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "H1").ProfileValue);
             Assert.AreEqual(expected: 80.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "H2").ProfileValue);
@@ -144,7 +154,6 @@ namespace AllocationProfilingServiceUnitTest
         [TestMethod]
         public void CheckPupilPremiumProfile()
         {
-            AllocationProfiler._client = GetCustomClient();
             Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(PupilPremiumRequest, writer));
             
             Assert.AreEqual(expected: 600M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "Q1").ProfileValue);
@@ -157,7 +166,6 @@ namespace AllocationProfilingServiceUnitTest
         [TestMethod]
         public void CheckNonLevy1618Profile()
         {
-            AllocationProfiler._client = GetCustomClient();
             Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(NonLevy1618Request, writer));
             Assert.AreEqual(response.ProfilePeriods.Count, 15);
             Assert.AreEqual(expected: 372.88M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "Jan" && q.PeriodYear==2018).ProfileValue);
@@ -180,7 +188,6 @@ namespace AllocationProfilingServiceUnitTest
         [TestMethod]
         public void CheckNonLevy1618ProfileShortAllocation()
         {
-            AllocationProfiler._client = GetCustomClient();
             Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(NonLevy1618RequestShortAllocation, writer));
             Assert.AreEqual(response.ProfilePeriods.Count, 6);
             Assert.AreEqual(35.96M, response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "Aug" && q.PeriodYear == 2018).ProfileValue);
@@ -193,7 +200,6 @@ namespace AllocationProfilingServiceUnitTest
         [TestMethod]
         public void CheckNonLevyAdultProfile()
         {
-            AllocationProfiler._client = GetCustomClient();
             Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(NonLevyAdultRequest, writer));
             Assert.AreEqual(response.ProfilePeriods.Count, 15);
         }
@@ -202,7 +208,6 @@ namespace AllocationProfilingServiceUnitTest
         [TestMethod]
         public void CheckAEBProfile()
         {
-            AllocationProfiler._client = GetCustomClient();
             Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(AEBRequest, writer));
             Assert.AreEqual(response.ProfilePeriods.Count, 12);
             Assert.AreEqual(expected:460.97M, actual:response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "Aug").ProfileValue);
@@ -223,7 +228,6 @@ namespace AllocationProfilingServiceUnitTest
         [TestMethod]
         public void CheckAEBProfileShortAllocation()
         {
-            AllocationProfiler._client = GetCustomClient();
             Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(AEBRequestShortAllocation, writer));
             Assert.AreEqual(response.ProfilePeriods.Count, 5);
         }
@@ -231,7 +235,6 @@ namespace AllocationProfilingServiceUnitTest
         [TestMethod]
         public void CheckCLProfile()
         {
-            AllocationProfiler._client = GetCustomClient();
             Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(CLRequest, writer));
             Assert.AreEqual(response.ProfilePeriods.Count, 12);
             Assert.AreEqual(expected: 249.87M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "Aug").ProfileValue);
@@ -251,7 +254,6 @@ namespace AllocationProfilingServiceUnitTest
         [TestMethod]
         public void Check1618AppsProfile()
         {
-            AllocationProfiler._client = GetCustomClient();
             Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(Sixteen18AAppsRequest, writer));
             Assert.AreEqual(response.ProfilePeriods.Count, 12);
             Assert.AreEqual(expected: 249.82M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "Aug").ProfileValue);
@@ -271,7 +273,6 @@ namespace AllocationProfilingServiceUnitTest
         [TestMethod]
         public void CheckAEBProfileForProviderWithPattern()
         {
-            AllocationProfiler._client = GetCustomClient();
             Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(AEBRequestForProviderWithPattern, writer));
             Assert.AreEqual(response.ProfilePeriods.Count, 12);
             Assert.AreEqual(expected: 171.11M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "Aug").ProfileValue);
@@ -296,8 +297,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestData,
-                    FundingStream = "DSG",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "DSG1819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="2400",Period="2018-2019" }
@@ -318,8 +318,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestData,
-                    FundingStream = "PESPORTPREM",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "PESPORTPREM1819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="24000000",Period="2018-2019" }
@@ -339,8 +338,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestData,
-                    FundingStream = "PESPORTPREMNEW",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "PESPORTPREMNEW1819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="24000000",Period="2018-2019" }
@@ -361,8 +359,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestData,
-                    FundingStream = "PESPORTPREMNEW",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "PESPORTPREMNEW1819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="24000000",Period="2018-2019" }
@@ -384,8 +381,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestData,
-                    FundingStream = "PESPORTPREM",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "PESPORTPREM1819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="150",Period="2018-2019" }
@@ -420,7 +416,7 @@ namespace AllocationProfilingServiceUnitTest
             }
         }
 
-        private static Request PESportPremiumNewReProfileRequest
+        private static Request PESportPremiumNewReProfilePastTwoPeriodsRequest
         {
             get
             {
@@ -428,8 +424,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestData,
-                    FundingStream = "PESPORTPREMNEW",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "PESPORTPREMNEW1819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="150",Period="2018-2019" }
@@ -473,7 +468,7 @@ namespace AllocationProfilingServiceUnitTest
             }
         }
 
-        private static Request PESportPremiumNewReProfileWithPastPeriodRequest
+        private static Request PESportPremiumRequestReProfilePastFirstPeriodRequest
         {
             get
             {
@@ -481,8 +476,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestData,
-                    FundingStream = "PESPORTPREMNEW",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "PESPORTPREMNEW1819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="240",Period="2018-2019" }
@@ -526,7 +520,57 @@ namespace AllocationProfilingServiceUnitTest
             }
         }
 
-        
+        private static Request PESportPremiumNewReProfileBeforeFirstPaymentRequest
+        {
+            get
+            {
+
+                Request req = new Request
+                {
+                    AllocationOrganisation = OrganisationTestData,
+                    FundingStreamPeriod = "PESPORTPREMNEW1819",
+                    AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
+                                                    {
+                                                        new RequestPeriodValue {AllocationValue="240",Period="2018-2019" }
+                                                    },
+                    AllocationStartDate = "01/08/2018",
+                    AllocationEndDate = "31/07/2019",
+                    CalculationDate = "10/10/2018",
+                    LastApprovedProfilePeriods = new List<AllocationProfilePeriod>()
+                     {
+                         new AllocationProfilePeriod()
+                         {
+                              Period="P1",
+                              Occurence=1,
+                              PeriodYear=2018,
+                              DistributionPeriod="2018-19",
+                              PeriodType="HalfYearly",
+                              ProfileValue=70.00M
+                         },
+                          new AllocationProfilePeriod()
+                         {
+                              Period="P2",
+                              Occurence=1,
+                              PeriodYear=2019,
+                              DistributionPeriod="2018-19",
+                              PeriodType="HalfYearly",
+                              ProfileValue=0.00M
+                         },
+                         new AllocationProfilePeriod()
+                         {
+                             Period="P3",
+                              Occurence=1,
+                              PeriodYear=2019,
+                              DistributionPeriod="2018-19",
+                              PeriodType="HalfYearly",
+                              ProfileValue=50.00M
+                         }
+                     }
+
+                };
+                return req;
+            }
+        }
 
         private static Request PupilPremiumRequest
         {
@@ -536,8 +580,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestData,
-                    FundingStream = "PUPPREM",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "PUPPREM1819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="2400",Period="2018-2019" }
@@ -557,8 +600,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestData,
-                    FundingStream = "NonLevy1618",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "NonLevy16181819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="2000",Period="2017-2018" },
@@ -579,8 +621,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestData,
-                    FundingStream = "NonLevy1618",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "NonLevy16181819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="2000",Period="2017-2018" },
@@ -601,8 +642,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestData,
-                    FundingStream = "NonLevyAdult",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "NonLevyAdult1819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="2000",Period="2018-2019" },
@@ -623,8 +663,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestData,
-                    FundingStream = "AEB",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "AEB1819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="2000",Period="2018-2019" },
@@ -645,8 +684,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestData,
-                    FundingStream = "AEB",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "AEB1819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="2000",Period="2018-2019" },
@@ -667,8 +705,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestData,
-                    FundingStream = "CL",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "CL1819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="2000",Period="2018-2019" },
@@ -689,8 +726,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestData,
-                    FundingStream = "1618Apps",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "1618APPS1819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="2000",Period="2018-2019" },
@@ -711,8 +747,7 @@ namespace AllocationProfilingServiceUnitTest
                 Request req = new Request
                 {
                     AllocationOrganisation = OrganisationTestDataWithPattern,
-                    FundingStream = "AEB",
-                    FundingPeriod = "2018-19",
+                    FundingStreamPeriod = "AEB1819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
                                                     {
                                                         new RequestPeriodValue {AllocationValue="2000",Period="2018-2019" },
