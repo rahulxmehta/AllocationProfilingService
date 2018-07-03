@@ -41,6 +41,7 @@ namespace AllocatinProfilingService
                 string jsonToReturn = Empty;
 
                 _client = client;
+                Log = log;
 
                 Request request = CreateRequestFromQueryString(req);
 
@@ -131,7 +132,7 @@ namespace AllocatinProfilingService
         {
             DateBoundaries dateBoundaries = GetDateBoundariesOfAllocation(req.AllocationStartDate, req.AllocationEndDate, fspPattern.FundingStreamPeriodStartDate, fspPattern.FundingStreamPeriodEndDate);
             
-            List<AllocationProfilePeriod> profilePeriods = GetProfiledAllocationPeriodsWithPatternApplied(dateBoundaries.dtStart, dateBoundaries.dtEnd, req.AllocationValuesByDistributionPeriod, fspPattern.ProfilePattern);
+            List<AllocationProfilePeriod> profilePeriods = GetProfiledAllocationPeriodsWithPatternApplied(dateBoundaries.StartDate, dateBoundaries.EndDate, req.AllocationValuesByDistributionPeriod, fspPattern.ProfilePattern);
 
             List<AllocationProfilePeriod> resultProfilePeriods = profilePeriods;
 
@@ -315,13 +316,6 @@ namespace AllocatinProfilingService
             return profilePattern.Where(p => p.PeriodEndDate >= allocationStartDate && p.PeriodStartDate <= allocationEndDate).ToList();
         }
 
-        private static decimal GetRevisedAllocationValueToProfile(List<AllocationProfilePeriod> previousPastAllocationProfilePeriods, 
-                                                                   decimal revisedAllocationValue)
-        {
-            decimal pastPeriodTotal = previousPastAllocationProfilePeriods.Sum(p => p.ProfileValue);
-            return revisedAllocationValue - pastPeriodTotal;
-        }
-
         private static List<ProfilePeriodPattern> GetFutureProfilePatternsForAllocation(DateTime currentDateTime, List<ProfilePeriodPattern> profilePatterns)
         {
             // find the pattern periods where cut-off date is less than the current date
@@ -329,7 +323,8 @@ namespace AllocatinProfilingService
         }
 
         private static List<AllocationProfilePeriod> GetPastPeriodsFromAllocationProfile(DateTime currentDateTime,
-                                                                         List<AllocationProfilePeriod> allocationProfilePeriods, List<ProfilePeriodPattern> profilePatterns)
+                                                                                        List<AllocationProfilePeriod> allocationProfilePeriods, 
+                                                                                        List<ProfilePeriodPattern> profilePatterns)
         {
             // find the pattern periods where cut-off date is less than the current date
             var pastPeriodPatterns= profilePatterns.Where(p => p.PeriodCutOffDate<=currentDateTime).ToList();
@@ -337,7 +332,8 @@ namespace AllocatinProfilingService
         }
 
         private static List<AllocationProfilePeriod> GetFuturePeriodsFromAllocationProfile(DateTime currentDateTime,
-                                                                         List<AllocationProfilePeriod> allocationProfilePeriods, List<ProfilePeriodPattern> profilePatterns)
+                                                                            List<AllocationProfilePeriod> allocationProfilePeriods, 
+                                                                            List<ProfilePeriodPattern> profilePatterns)
         {
             // find the pattern periods where cut-off date is less than the current date
             return GetProfilePeriodsMatchingPatternPeriods(allocationProfilePeriods, GetFutureProfilePatternsForAllocation(currentDateTime, profilePatterns));
@@ -433,11 +429,11 @@ namespace AllocatinProfilingService
             {
                 foreach (AllocationProfilePeriod period in periods)
                 {
-                    if (pattern.Period == period.Period && pattern.DistributionPeriod == period.DistributionPeriod && pattern.Occurrence== period.Occurence & pattern.PeriodEndDate.Year == period.PeriodYear)
-                    {
-                        matchedPatterns.Add(pattern);
-                        break;
-                    }
+                    if (pattern.Period != period.Period || pattern.DistributionPeriod != period.DistributionPeriod ||
+                        !(pattern.Occurrence == period.Occurence & pattern.PeriodEndDate.Year == period.PeriodYear))
+                        continue;
+                    matchedPatterns.Add(pattern);
+                    break;
                 }
             }
             return matchedPatterns;
@@ -610,13 +606,6 @@ namespace AllocatinProfilingService
         public List<ProfilePeriodPattern> ProfilePattern { get; set; }
     }
 
-    public class FundingStreamProfilePattern
-    {
-        public string FundingStream { get; set; }
-        public string DistributionPeriodType { get; set; }
-        public List<ProfilePeriodPattern> ProfilePattern { get; set; }
-    }
-
     public class PercentageByDistibutionPeriod
     {
         public string Period { get; set; }
@@ -625,13 +614,13 @@ namespace AllocatinProfilingService
 
     public struct DateBoundaries
     {
-        public DateTime dtStart { get; set; }
-        public DateTime dtEnd { get; set; }
+        public DateTime StartDate { get; set; }
+        public DateTime EndDate { get; set; }
 
         public DateBoundaries(DateTime dtstart, DateTime dtend)
         {
-            dtStart = dtstart;
-            dtEnd = dtend;
+            StartDate = dtstart;
+            EndDate = dtend;
         }
     }
 }
