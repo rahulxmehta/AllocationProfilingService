@@ -90,6 +90,17 @@ namespace AllocationProfilingServiceUnitTest
 
             Assert.AreEqual(response.ProfilePeriods.Count, 2);
         }
+
+        [TestMethod]
+        public void CheckPESportPremiumProfileWithMonthlyPeriods()
+        {
+            Response response = JsonConvert.DeserializeObject<Response>(AllocationProfiler.GetGenericResponse(PESportRequest, writer));
+            Assert.AreEqual(expected: 14000000.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "Oct").ProfileValue);
+            Assert.AreEqual(expected: 10000000.00M, actual: response.ProfilePeriods.ToArray().FirstOrDefault(q => q.Period == "Apr").ProfileValue);
+
+            Assert.AreEqual(response.ProfilePeriods.Count, 2);
+        }
+
         [TestMethod]
         public void CheckPESportPremiumNewProfileStartOfYear()
         {
@@ -310,6 +321,26 @@ namespace AllocationProfilingServiceUnitTest
             }
         }
 
+        private static Request PESportRequest
+        {
+            get
+            {
+
+                Request req = new Request
+                {
+                    AllocationOrganisation = OrganisationTestData,
+                    FundingStreamPeriod = "PESPORT1819",
+                    AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
+                                                    {
+                                                        new RequestPeriodValue {AllocationValue="24000000",Period="2018-2019" }
+                                                    },
+                    AllocationStartDate = "01/08/2018",
+                    AllocationEndDate = "31/07/2019"
+                };
+                return req;
+            }
+        }
+
         private static Request PESportPremiumRequest
         {
             get
@@ -320,9 +351,9 @@ namespace AllocationProfilingServiceUnitTest
                     AllocationOrganisation = OrganisationTestData,
                     FundingStreamPeriod = "PESPORTPREM1819",
                     AllocationValuesByDistributionPeriod = new List<RequestPeriodValue>
-                                                    {
-                                                        new RequestPeriodValue {AllocationValue="24000000",Period="2018-2019" }
-                                                    },
+                    {
+                        new RequestPeriodValue {AllocationValue="24000000",Period="2018-2019" }
+                    },
                     AllocationStartDate = "01/08/2018",
                     AllocationEndDate = "31/07/2019"
                 };
