@@ -15,7 +15,7 @@ namespace CalculateProfileApi.Controllers
         [SwaggerOperation("GetAll")]
         public IEnumerable<string> Get()
         {
-            return new string[] { "value1", "value2" };
+            return new string[] { "value1", "value2" , "value3", "value4" };
         }
 
         // GET api/values/5
