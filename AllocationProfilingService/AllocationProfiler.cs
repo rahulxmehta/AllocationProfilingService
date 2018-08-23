@@ -453,8 +453,9 @@ namespace AllocatinProfilingService
             Log.Info("Getting profile periods for allocation at FSP Level ...");
 
             Uri collectionUri = UriFactory.CreateDocumentCollectionUri("FundingPolicy", "FundingStreamPeriodProfilePattern");
+            FeedOptions option = new FeedOptions { EnableCrossPartitionQuery = true };
 
-            IDocumentQuery<FundingStreamPeriodProfilePattern> query = _client.CreateDocumentQuery<FundingStreamPeriodProfilePattern>(collectionUri)
+            IDocumentQuery<FundingStreamPeriodProfilePattern> query = _client.CreateDocumentQuery<FundingStreamPeriodProfilePattern>(collectionUri,option)
                 .Where(p => p.FundingStreamPeriodCode.ToUpper() == fundingStreamPeriod.ToUpper())
                 .AsDocumentQuery();
 
@@ -478,8 +479,9 @@ namespace AllocatinProfilingService
             if (IsNullOrEmpty(providerIdentifier)) return null;
 
             Uri collectionUri = UriFactory.CreateDocumentCollectionUri("FundingPolicy", "OrganisationFSPProfilePattern");
-               
-            IDocumentQuery<OrganisationFundingProfilePattern> query = _client.CreateDocumentQuery<OrganisationFundingProfilePattern>(collectionUri)
+            FeedOptions option = new FeedOptions { EnableCrossPartitionQuery = true };
+
+            IDocumentQuery<OrganisationFundingProfilePattern> query = _client.CreateDocumentQuery<OrganisationFundingProfilePattern>(collectionUri, option)
                 .Where(p => p.FundingStreamPeriodProfilePattern.FundingStreamPeriodCode.ToUpper() == fundingStreamPeriod.ToUpper() && p.AllocationOrganisation.AlternateOrganisation.Identifier == providerIdentifier)
                 .AsDocumentQuery();
 
